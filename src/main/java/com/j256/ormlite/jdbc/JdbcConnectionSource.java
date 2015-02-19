@@ -1,5 +1,6 @@
 package com.j256.ormlite.jdbc;
 
+import java.io.IOException;
 import java.sql.DriverManager;
 import java.sql.SQLException;
 import java.util.Properties;
@@ -8,6 +9,7 @@ import com.j256.ormlite.db.DatabaseType;
 import com.j256.ormlite.db.DatabaseTypeUtils;
 import com.j256.ormlite.logger.Logger;
 import com.j256.ormlite.logger.LoggerFactory;
+import com.j256.ormlite.misc.IOUtils;
 import com.j256.ormlite.support.BaseConnectionSource;
 import com.j256.ormlite.support.ConnectionSource;
 import com.j256.ormlite.support.DatabaseConnection;
@@ -15,7 +17,8 @@ import com.j256.ormlite.support.DatabaseConnectionProxyFactory;
 
 /**
  * Implementation of the ConnectionSource interface that supports what is needed by ORMLite. This is not thread-safe nor
- * synchronized. For other dataSources, see the {@link DataSourceConnectionSource} class.
+ * synchronized and under the covers uses a single database connection. For other dataSources, see the
+ * {@link DataSourceConnectionSource} class.
  * 
  * <p>
  * <b> NOTE: </b> If you are using the Spring type wiring in Java, {@link #initialize} should be called after all of the
@@ -31,7 +34,7 @@ public class JdbcConnectionSource extends BaseConnectionSource implements Connec
 	private String url;
 	private String username;
 	private String password;
-	private DatabaseConnection connection;
+	protected DatabaseConnection connection;
 	protected DatabaseType databaseType;
 	protected boolean initialized = false;
 	private static DatabaseConnectionProxyFactory connectionProxyFactory;
@@ -136,9 +139,9 @@ public class JdbcConnectionSource extends BaseConnectionSource implements Connec
 		initialized = true;
 	}
 
-	public void close() throws SQLException {
+	public void close() throws IOException {
 		if (!initialized) {
-			throw new SQLException(getClass().getSimpleName() + " was not initialized properly");
+			throw new IOException(getClass().getSimpleName() + " was not initialized properly");
 		}
 		if (connection != null) {
 			connection.close();
@@ -148,11 +151,7 @@ public class JdbcConnectionSource extends BaseConnectionSource implements Connec
 	}
 
 	public void closeQuietly() {
-		try {
-			close();
-		} catch (SQLException e) {
-			// ignored
-		}
+		IOUtils.closeQuietly(this);
 	}
 
 	public String getUrl() {
@@ -213,6 +212,10 @@ public class JdbcConnectionSource extends BaseConnectionSource implements Connec
 		return connection != null;
 	}
 
+	public boolean isSingleConnection() {
+		return true;
+	}
+
 	// not required
 	public void setUsername(String username) {
 		this.username = username;
@@ -241,6 +244,7 @@ public class JdbcConnectionSource extends BaseConnectionSource implements Connec
 	 * @param logger
 	 *            This is here so we can use the right logger associated with the sub-class.
 	 */
+	@SuppressWarnings("resource")
 	protected DatabaseConnection makeConnection(Logger logger) throws SQLException {
 		Properties properties = new Properties();
 		if (username != null) {

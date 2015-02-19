@@ -42,7 +42,7 @@ public class SqlServerDatabaseType extends BaseDatabaseType {
 	}
 
 	@Override
-	public FieldConverter getFieldConverter(DataPersister dataType) {
+	public FieldConverter getFieldConverter(DataPersister dataType, FieldType fieldType) {
 		// we are only overriding certain types
 		switch (dataType.getSqlType()) {
 			case BOOLEAN :
@@ -50,8 +50,13 @@ public class SqlServerDatabaseType extends BaseDatabaseType {
 			case BYTE :
 				return byteConverter;
 			default :
-				return super.getFieldConverter(dataType);
+				return super.getFieldConverter(dataType, fieldType);
 		}
+	}
+
+	@Override
+	protected void appendUuidNativeType(StringBuilder sb, FieldType fieldType, int fieldWidth) {
+		sb.append("UNIQUEIDENTIFIER");
 	}
 
 	@Override

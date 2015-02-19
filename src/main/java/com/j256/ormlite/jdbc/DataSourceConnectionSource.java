@@ -1,5 +1,6 @@
 package com.j256.ormlite.jdbc;
 
+import java.io.IOException;
 import java.sql.DriverManager;
 import java.sql.SQLException;
 
@@ -9,6 +10,7 @@ import com.j256.ormlite.db.DatabaseType;
 import com.j256.ormlite.db.DatabaseTypeUtils;
 import com.j256.ormlite.logger.Logger;
 import com.j256.ormlite.logger.LoggerFactory;
+import com.j256.ormlite.misc.IOUtils;
 import com.j256.ormlite.support.BaseConnectionSource;
 import com.j256.ormlite.support.ConnectionSource;
 import com.j256.ormlite.support.DatabaseConnection;
@@ -31,7 +33,8 @@ public class DataSourceConnectionSource extends BaseConnectionSource implements 
 	private DataSource dataSource;
 	private DatabaseType databaseType;
 	private String databaseUrl;
-	private boolean initialized = false;
+	private boolean initialized;
+	private boolean isSingleConnection;
 
 	/**
 	 * Constructor for Spring type wiring if you are using the set methods. If you are using Spring then your should
@@ -92,6 +95,19 @@ public class DataSourceConnectionSource extends BaseConnectionSource implements 
 		if (databaseUrl != null) {
 			databaseType.setDriver(DriverManager.getDriver(databaseUrl));
 		}
+
+		// see if we have a single connection data-source
+		DatabaseConnection conn1 = null;
+		DatabaseConnection conn2 = null;
+		try {
+			conn1 = getReadWriteConnection();
+			conn2 = getReadWriteConnection();
+			isSingleConnection = isSingleConnection(conn1, conn2);
+		} finally {
+			IOUtils.closeQuietly(conn1);
+			IOUtils.closeQuietly(conn2);
+		}
+
 		initialized = true;
 	}
 
@@ -127,7 +143,7 @@ public class DataSourceConnectionSource extends BaseConnectionSource implements 
 		if (isSavedConnection(connection)) {
 			// ignore the release because we will close it at the end of the connection
 		} else {
-			connection.close();
+			IOUtils.closeThrowSqlException(connection, "SQL connection");
 		}
 	}
 
@@ -158,19 +174,15 @@ public class DataSourceConnectionSource extends BaseConnectionSource implements 
 	 * This typically closes the connection source but because there is not a close() method on the {@link DataSource}
 	 * (grrrr), this close method does _nothing_. You must close the underlying data-source yourself.
 	 */
-	public void close() throws SQLException {
+	public void close() throws IOException {
 		if (!initialized) {
-			throw new SQLException(getClass().getSimpleName() + ".initialize() was not called");
+			throw new IOException(getClass().getSimpleName() + ".initialize() was not called");
 		}
 		// unfortunately, you will need to close the DataSource directly since there is no close on the interface
 	}
 
 	public void closeQuietly() {
-		try {
-			close();
-		} catch (SQLException e) {
-			// ignored
-		}
+		IOUtils.closeQuietly(this);
 	}
 
 	public DatabaseType getDatabaseType() {
@@ -185,6 +197,19 @@ public class DataSourceConnectionSource extends BaseConnectionSource implements 
 	 */
 	public boolean isOpen() {
 		return true;
+	}
+
+	/**
+	 * Return true if there is only one connection to the database. If true then some thread locks may be enabled when
+	 * using batch tasks and auto-commit.
+	 * 
+	 * <p>
+	 * NOTE: to test the data-source to see if it gives out multiple connections, we request two connections to see if
+	 * they are different. I guess that's the best that we can do.
+	 * </p>
+	 */
+	public boolean isSingleConnection() {
+		return isSingleConnection;
 	}
 
 	public void setDataSource(DataSource dataSource) {
